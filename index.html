@@ -3691,7 +3691,9 @@ SECTIONS['ae-proc-master']=simpleMaster({
 /* =========================================================
    AESTHETICS: Appointments
    ========================================================= */
-var AP_STATUS=['Booked','Confirmed','Arrived','Completed','Cancelled','No-show'];
+var AP_STATUS=['Booked','Completed','Cancelled','No-show'];
+/* Confirmed and Arrived are no longer offered; older appointments with them show as Booked */
+function apStatusShown(s){return s==='Confirmed'||s==='Arrived'?'Booked':s}
 var AP_PILL={Booked:'off',Confirmed:'partial',Arrived:'partial',Completed:'paid',Cancelled:'unpaid','No-show':'unpaid'};
 var apF={view:'day',date:'',q:'',type:'',status:'',staff:''};
 function addDays(ds0,n){var d=parseD(ds0);d.setDate(d.getDate()+n);return ds(d)}
@@ -3721,7 +3723,7 @@ function apList(){
     if(apF.view==='upcoming'&&(a.date<t||a.status==='Cancelled'||a.status==='Completed'||a.status==='No-show')) return false;
     if(apF.view==='missed'&&!apMissed(a)) return false;
     if(apF.type&&a.type!==apF.type) return false;
-    if(apF.status&&a.status!==apF.status) return false;
+    if(apF.status&&apStatusShown(a.status)!==apF.status) return false;
     if(apF.staff&&apStaff(a).indexOf(apF.staff)<0) return false;
     if(q&&norm(a.no+' '+a.clientName+' '+(a.clientPhone||'')+' '+apWhat(a)+' '+apStaffNames(a)).indexOf(q)<0) return false;
     return true;
@@ -3764,7 +3766,7 @@ SECTIONS['ae-appointments']={
         '<td><button class="link" style="color:inherit" data-client-view="'+esc(a.clientId)+'"><strong>'+esc(a.clientName)+'</strong></button><div class="sub">'+esc(a.clientPhone||'')+'</div></td>'+
         '<td><span class="pill '+(a.type==='Procedure'?'partial':'off')+'">'+esc(a.type)+'</span>'+(a.type==='Procedure'?'<div class="sub">'+esc(apWhat(a))+'</div>':'')+(a.quoteId?'<div class="sub">'+esc(apSessionLabel(a))+'</div>':'')+'</td>'+
         '<td>'+esc(apStaffNames(a)||'—')+'</td>'+
-        '<td><select class="ap-st" data-id="'+esc(a.id)+'" aria-label="Status of '+esc(a.no)+'" style="min-height:32px;padding:4px 8px;width:auto"'+(!canEdit()?' disabled':'')+'>'+optList(AP_STATUS,a.status)+'</select></td>'+
+        '<td><select class="ap-st" data-id="'+esc(a.id)+'" aria-label="Status of '+esc(a.no)+'" style="min-height:32px;padding:4px 8px;width:auto"'+(!canEdit()?' disabled':'')+'>'+optList(AP_STATUS,apStatusShown(a.status))+'</select></td>'+
         '<td><div class="row-acts w">'+((apMissed(a)||a.status==='No-show')&&!readOnly?'<button class="btn sm primary" data-apres="'+esc(a.id)+'">Reschedule</button>':'')+'<button class="btn sm" data-apedit="'+esc(a.id)+'">Edit</button><button class="btn sm danger" data-apdel="'+esc(a.id)+'">Delete</button></div></td></tr>'}).join('')+
       '</tbody></table></div>'+'<p class="hint">'+countOf(list.length,activeVouchers('aeAppts').length,'appointments')+'</p>';
     b.innerHTML=html;
@@ -5810,7 +5812,7 @@ function viewQt(id,fallback){
     $$('[data-qsess]',m).forEach(function(b){b.onclick=function(){var i=+b.dataset.qsess,st=qtLineStats(q,i),h=m.querySelector('#qv-hist');
       var ap=st.appts.slice().sort(function(x,y){return (x.date||'').localeCompare(y.date||'')||toMin(apFrom(x))-toMin(apFrom(y))});
       h.innerHTML='<h3 class="sec-h">'+esc(q.lines[i].name)+' · appointments</h3><div class="tbl"><table><thead><tr><th>Appointment</th><th>Date</th><th>Time (IST)</th><th>Doctor / staff</th><th>Status</th></tr></thead><tbody>'+
-        ap.map(function(a){return '<tr><td>'+esc(a.no)+'</td><td class="nowrap">'+fmtDate(a.date)+'</td><td class="nowrap">'+esc(fmtTime(apFrom(a)))+' to '+esc(fmtTime(apTo(a)))+'</td><td>'+esc(apStaffNames(a)||'—')+'</td><td><span class="pill '+AP_PILL[a.status]+'">'+esc(a.status)+'</span></td></tr>'}).join('')+'</tbody></table></div>';
+        ap.map(function(a){return '<tr><td>'+esc(a.no)+'</td><td class="nowrap">'+fmtDate(a.date)+'</td><td class="nowrap">'+esc(fmtTime(apFrom(a)))+' to '+esc(fmtTime(apTo(a)))+'</td><td>'+esc(apStaffNames(a)||'—')+'</td><td><span class="pill '+AP_PILL[apStatusShown(a.status)]+'">'+esc(apStatusShown(a.status))+'</span></td></tr>'}).join('')+'</tbody></table></div>';
       h.scrollIntoView({block:'nearest'});}});
   };
   var m=openModal('','--m3',true); render(m); modalRefresh=function(){render(m)};
@@ -6911,7 +6913,7 @@ SECTIONS['ae-dashboard']={
       tile('--m3','Quotations in '+monthName,money0(sum(qtM)),started+' of '+qtM.length+' started',openList('ae-quotations',qtF,ym+'-01',function(){qtMode='list'}))+tile('--m6','Expenses in '+monthName,money0(expMonthTotal('aes')),'Aesthetics expenses',openList('expenses',expF,monthStart(),function(f){f.dept=DEPT_NAME['aes'];f.cat='';f.status='';expLastDept=dept}))+'</div>';
 
     html+='<div class="panels"><div class="panel"><h3>Today’s appointments</h3>'+(apT.length?'<div class="tbl"><table><thead><tr><th>Time</th><th>Client</th><th>For</th><th>Doctor / staff</th><th>Status</th></tr></thead><tbody>'+
-        apT.map(function(a){return '<tr class="click-row" data-ad-appt="'+esc(a.id)+'"><td class="nowrap"><strong>'+esc(fmtTime(apFrom(a)))+'</strong></td><td><strong>'+esc(a.clientName)+'</strong></td><td>'+esc(apWhat(a))+'</td><td>'+esc(apStaffNames(a)||'—')+'</td><td><span class="pill '+(AP_PILL[a.status]||'off')+'">'+esc(a.status)+'</span></td></tr>'}).join('')+'</tbody></table></div>':'<p class="hint">No appointments today.</p>')+'</div>'+
+        apT.map(function(a){return '<tr class="click-row" data-ad-appt="'+esc(a.id)+'"><td class="nowrap"><strong>'+esc(fmtTime(apFrom(a)))+'</strong></td><td><strong>'+esc(a.clientName)+'</strong></td><td>'+esc(apWhat(a))+'</td><td>'+esc(apStaffNames(a)||'—')+'</td><td><span class="pill '+(AP_PILL[apStatusShown(a.status)]||'off')+'">'+esc(apStatusShown(a.status))+'</span></td></tr>'}).join('')+'</tbody></table></div>':'<p class="hint">No appointments today.</p>')+'</div>'+
       '<div class="stack"><div class="panel"><h3>Collections in '+esc(monthName)+'</h3>'+(mk.length?mk.map(function(k){return hbar(k,money0(modes[k]),modes[k]/mmax,'--m5')}).join(''):'<p class="hint">No collections this month.</p>')+'</div>'+'</div></div>';
 
     html+='<div class="panels"><div class="panel"><h3>Follow-up: sessions left, nothing booked</h3>'+(follow.length?'<div class="tbl"><table><thead><tr><th>Client</th><th>Procedure</th><th>Done</th><th>Last session</th><th></th></tr></thead><tbody>'+
