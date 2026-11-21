@@ -3760,7 +3760,15 @@ SECTIONS['ae-appointments']={
         '<td><div class="row-acts w">'+(apMissed(a)&&!readOnly?'<button class="btn sm primary" data-apres="'+esc(a.id)+'">Reschedule</button>':'')+'<button class="btn sm" data-apedit="'+esc(a.id)+'">Edit</button><button class="btn sm danger" data-apdel="'+esc(a.id)+'">Delete</button></div></td></tr>'}).join('')+
       '</tbody></table></div>'+'<p class="hint">'+countOf(list.length,activeVouchers('aeAppts').length,'appointments')+'</p>';
     b.innerHTML=html;
-    $$('.ap-st',b).forEach(function(x){x.onchange=function(){var a=findIn('aeAppts',x.dataset.id);if(!a)return;var n=Object.assign({},a,{status:x.value,updatedAt:new Date().toISOString()});x.disabled=true;put('aeAppts',n).then(function(){toast(a.no+' marked '+x.value)}).catch(function(e){x.disabled=false;x.value=a.status;toast(errText(e))})}});
+    $$('.ap-st',b).forEach(function(x){x.onchange=function(){var a=findIn('aeAppts',x.dataset.id);if(!a)return;
+      /* Completed is set by recording the visit, so a visit is never counted twice */
+      if(x.value==='Completed'){
+        if((a.date||'')>todayStr()){x.value=a.status;toast(a.no+' is on '+fmtDate(a.date)+'. It can be completed on or after that day.');return}
+        if(a.quoteId&&!activeVouchers('aeSessions').some(function(s){return s.apptId===a.id})){x.value=a.status;
+          if(confirm(a.no+' is a treatment visit. Record its session now? The appointment is marked Completed when the session is saved.'))sesOpenForm({quoteId:a.quoteId,lineKey:a.quoteLineId||'',apptId:a.id,date:a.date&&a.date<=todayStr()?a.date:todayStr()});
+          return}
+      }
+      var n=Object.assign({},a,{status:x.value,updatedAt:new Date().toISOString()});x.disabled=true;put('aeAppts',n).then(function(){toast(a.no+' marked '+x.value)}).catch(function(e){x.disabled=false;x.value=a.status;toast(errText(e))})}});
     $$('[data-apedit]',b).forEach(function(x){x.onclick=function(){editAppt(x.dataset.apedit)}});
     $$('[data-apres]',b).forEach(function(x){x.onclick=function(){editAppt(x.dataset.apres,{_resched:true,date:todayStr()})}});
     $$('[data-apdel]',b).forEach(function(x){x.onclick=function(){cancelVoucher('aeAppts',x.dataset.apdel)}});
@@ -4733,6 +4741,9 @@ function sesSave(){
   if(q.clientId!==c.id) return show('The selected quotation belongs to another client.');
   if(!ln) return show('Select the procedure.');
   if(!d.id){var lkA=qtLock(q);if(lkA) return show(qtLockMsg(q,lkA))}
+  /* a Completed appointment of this treatment without a session is probably this same visit: offer to link it */
+  if(!d.id&&!d.apptId){var orphan=activeVouchers('aeAppts').filter(function(x){return x.quoteId===q.id&&x.quoteLineId===d.lineKey&&x.status==='Completed'&&!activeVouchers('aeSessions').some(function(s){return s.apptId===x.id})}).sort(function(x,y){return (y.date||'').localeCompare(x.date||'')})[0];
+    if(orphan&&confirm('Is this the same visit as '+orphan.no+' ('+fmtDate(orphan.date)+', marked Completed)?\n\nOK = link them, so the visit counts once.\nCancel = it is a different visit.')){d.apptId=orphan.id;a=orphan}}
   if(!d.date) return show('Choose the date the procedure was performed.');
   if(!d.staffIds.length) return show('Choose who performed the procedure.');
   if(Object.keys(d.photos).some(function(k){return d.photos[k].busy})) return show('Wait for the photos to finish uploading.');
