@@ -7026,7 +7026,7 @@ function pendSection(d){return {
     var tasks=pendTasks(d), op=pendOpen[d], openN=0, amtT=0;
     tasks.forEach(function(x){x.amt=r2(x.rows.reduce(function(t,r){return t+(+r.amt||0)},0));x.hasAmt=x.rows.some(function(r){return r.amt!=null});if(!x.noBadge)openN+=x.rows.length;amtT+=x.amt});
     var colH=d==='aes'?'Oldest / next':'Oldest';
-    var html='<div class="pend-top"><span class="sub">Click a row to see the list and act.</span><span class="pend-sum">Open tasks <strong>'+openN+'</strong>'+(amtT>0.004?' · Amount pending <strong>'+money0(amtT)+'</strong>':'')+'</span></div>'+
+    var html='<div class="pend-top"><span></span><span class="pend-sum">Open tasks <strong>'+openN+'</strong>'+(amtT>0.004?' · Amount pending <strong>'+money0(amtT)+'</strong>':'')+'</span></div>'+
       '<div class="tbl pend-tbl"><table><thead><tr><th>Task</th><th class="num">Count</th><th class="num">Amount</th><th>'+colH+'</th><th></th></tr></thead><tbody>'+
       tasks.map(function(x,ix){var on=!!op[x.key], c=['--m6','--m5','--m4','--m3','--m2','--m11','--m13','--m7'][ix%8];
         var row='<tr class="pend-row'+(x.rows.length?'':' zero')+(on?' open':'')+'" data-pk="'+esc(x.key)+'" tabindex="0" role="button" aria-expanded="'+on+'"><td><span class="pdot" style="background:var('+c+')"></span><strong>'+esc(x.label)+'</strong></td><td class="num"><span class="pcnt'+(x.upcoming?' info':'')+'">'+x.rows.length+'</span></td><td class="num">'+(x.hasAmt&&x.rows.length?money(x.amt):'—')+'</td><td>'+(x.rows.length?pendAge(x):'—')+'</td><td class="num"><span class="pcar">▸</span></td></tr>';
