@@ -3711,7 +3711,8 @@ function apStaffNames(a){return apStaff(a).map(userName).filter(Boolean).join(',
 function endTime(a){return apTo(a)}
 var SLOT_START=8*60, SLOT_END=21*60, SLOT_STEP=15;
 function apWhat(a){return a.type==='Procedure'?(a.procedureName||(findIn('aeProcs',a.procedureId)||{}).name||'Procedure'):'Consultation'}
-function apMissed(a){return a.status==='No-show'||(a.date<todayStr()&&AP_ACTIVE.indexOf(a.status)>=0&&!S.aeCons.some(function(c){return c.apptId===a.id&&!c.cancelled}))}
+/* missed = a past appointment still open; marking it No-show (or Cancelled / Completed) clears it */
+function apMissed(a){return (a.date<todayStr()&&AP_ACTIVE.indexOf(a.status)>=0&&!S.aeCons.some(function(c){return c.apptId===a.id&&!c.cancelled}))}
 function apList(){
   var q=norm(apF.q), t=todayStr();
   return activeVouchers('aeAppts').filter(function(a){
@@ -3764,7 +3765,7 @@ SECTIONS['ae-appointments']={
         '<td><span class="pill '+(a.type==='Procedure'?'partial':'off')+'">'+esc(a.type)+'</span>'+(a.type==='Procedure'?'<div class="sub">'+esc(apWhat(a))+'</div>':'')+(a.quoteId?'<div class="sub">'+esc(apSessionLabel(a))+'</div>':'')+'</td>'+
         '<td>'+esc(apStaffNames(a)||'—')+'</td>'+
         '<td><select class="ap-st" data-id="'+esc(a.id)+'" aria-label="Status of '+esc(a.no)+'" style="min-height:32px;padding:4px 8px;width:auto"'+(!canEdit()?' disabled':'')+'>'+optList(AP_STATUS,a.status)+'</select></td>'+
-        '<td><div class="row-acts w">'+(apMissed(a)&&!readOnly?'<button class="btn sm primary" data-apres="'+esc(a.id)+'">Reschedule</button>':'')+'<button class="btn sm" data-apedit="'+esc(a.id)+'">Edit</button><button class="btn sm danger" data-apdel="'+esc(a.id)+'">Delete</button></div></td></tr>'}).join('')+
+        '<td><div class="row-acts w">'+((apMissed(a)||a.status==='No-show')&&!readOnly?'<button class="btn sm primary" data-apres="'+esc(a.id)+'">Reschedule</button>':'')+'<button class="btn sm" data-apedit="'+esc(a.id)+'">Edit</button><button class="btn sm danger" data-apdel="'+esc(a.id)+'">Delete</button></div></td></tr>'}).join('')+
       '</tbody></table></div>'+'<p class="hint">'+countOf(list.length,activeVouchers('aeAppts').length,'appointments')+'</p>';
     b.innerHTML=html;
     $$('.ap-st',b).forEach(function(x){x.onchange=function(){var a=findIn('aeAppts',x.dataset.id);if(!a)return;
@@ -6944,7 +6945,7 @@ function docPendTasks(){
   var appts=activeVouchers('aeAppts').filter(function(a){return apStaff(a).indexOf(me)>=0});
   var start=function(a){var c=conByAp[a.id];if(c){viewCon(c.id);return}conDraft=conNew();conDraft.clientId=a.clientId;conDraft.clientName=a.clientName||'';conDraft.apptId=a.id;conMode='form';go('ae-consultations')};
   return [
-    {key:'missed',label:'Missed Appointments',hint:'No-shows and past appointments never completed or cancelled. The front desk reschedules these.',ro:true,rows:appts.filter(apMissed).sort(function(a,b){return (a.date||'').localeCompare(b.date||'')}).map(function(a){return {main:a.clientName,sub:apWhat(a)+' · '+fmtDate(a.date)+' '+fmtTime(apFrom(a))+' · '+a.status,date:a.date}})},
+    {key:'missed',label:'Missed Appointments',hint:'Past appointments not completed, cancelled or marked No-show. The front desk reschedules these.',ro:true,rows:appts.filter(apMissed).sort(function(a,b){return (a.date||'').localeCompare(b.date||'')}).map(function(a){return {main:a.clientName,sub:apWhat(a)+' · '+fmtDate(a.date)+' '+fmtTime(apFrom(a))+' · '+a.status,date:a.date}})},
     {key:'sched',label:'Scheduled Appointments',hint:'Your appointments from today onwards.',upcoming:true,noBadge:true,rows:appts.filter(function(a){return a.date>=t&&AP_ACTIVE.indexOf(a.status)>=0&&!apMissed(a)}).sort(function(a,b){return ((a.date||'')+apFrom(a)).localeCompare((b.date||'')+apFrom(b))}).map(function(a){return {main:a.clientName,sub:apWhat(a)+' · '+fmtDate(a.date)+' '+fmtTime(apFrom(a)),date:a.date,btn:conByAp[a.id]?'Open consultation':'Start consultation',run:function(){start(a)}}})},
     {key:'conip',label:'Consultations In Progress',hint:'Your consultations saved as In progress. Open one and mark it Complete when done.',rows:activeVouchers('aeCons').filter(function(c){return !conDone(c)&&(c.staffIds||[]).indexOf(me)>=0}).sort(function(a,b){return (a.date||'').localeCompare(b.date||'')}).map(function(c){return {main:c.clientName,sub:(c.no||'')+' · '+fmtDate(c.date),date:c.date,btn:'Open',run:function(){viewCon(c.id)}}})}
   ];
@@ -6963,7 +6964,7 @@ function pendTasks(d){
     activeVouchers('aeQuotes').forEach(function(q){if(q.conId)qByCon[q.conId]=1});
     var appts=activeVouchers('aeAppts');
     /* 1 missed */
-    out.push({key:'missed',label:'Missed Appointments',hint:'No-shows and past appointments never completed or cancelled.',rows:appts.filter(apMissed).sort(function(a,b){return (a.date||'').localeCompare(b.date||'')}).map(function(a){return {main:a.clientName,sub:apWhat(a)+' · '+fmtDate(a.date)+' '+fmtTime(apFrom(a))+' · '+a.status,date:a.date,btn:'Reschedule',run:function(){editAppt(a.id,{_resched:true,date:todayStr()})}}})});
+    out.push({key:'missed',label:'Missed Appointments',hint:'Past appointments not completed, cancelled or marked No-show. Mark No-show if the client did not come.',rows:appts.filter(apMissed).sort(function(a,b){return (a.date||'').localeCompare(b.date||'')}).map(function(a){return {main:a.clientName,sub:apWhat(a)+' · '+fmtDate(a.date)+' '+fmtTime(apFrom(a))+' · '+a.status,date:a.date,btn:'Reschedule',run:function(){editAppt(a.id,{_resched:true,date:todayStr()})}}})});
     /* 2 scheduled */
     out.push({key:'sched',label:'Scheduled Appointments',hint:'Upcoming appointments from today onwards.',upcoming:true,noBadge:true,rows:appts.filter(function(a){return a.date>=t&&AP_ACTIVE.indexOf(a.status)>=0&&!apMissed(a)}).sort(function(a,b){return ((a.date||'')+apFrom(a)).localeCompare((b.date||'')+apFrom(b))}).map(function(a){return {main:a.clientName,sub:apWhat(a)+' · '+fmtDate(a.date)+' '+fmtTime(apFrom(a))+(apStaffNames(a)?' · '+apStaffNames(a):''),date:a.date,btn:'Open',run:function(){editAppt(a.id)}}})});
     out.push({key:'conip',label:'Consultations In Progress',hint:'Consultations saved as In progress, waiting for the doctor to complete them.',rows:activeVouchers('aeCons').filter(function(c){return !conDone(c)}).sort(function(a,b){return (a.date||'').localeCompare(b.date||'')}).map(function(c){return {main:c.clientName,sub:(c.no||'')+' · '+fmtDate(c.date)+(c.doctor?' · '+c.doctor:''),date:c.date,btn:'Open',run:function(){viewCon(c.id)}}})});
