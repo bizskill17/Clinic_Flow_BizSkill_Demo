@@ -2177,16 +2177,23 @@ function splitError(d,required){
   });
   return msg||(required&&!(splitTotal(d)>0)?'Enter at least one payment greater than zero.':'');
 }
-function mountSplit(host,d,totalFn){
+function mountSplit(host,d,totalFn,opts){
   if(!host)return;
+  var advC=null,advA=0;
   var rows=splitRows(d);
   function summary(){
     d.payAmount=String(splitTotal(d));
     var total=r2(totalFn()),received=splitTotal(d),balance=r2(Math.max(0,total-received)),advance=r2(Math.max(0,received-total));
     var box=host.querySelector('[data-split-summary]');if(!box)return;
-    box.innerHTML='<span>Invoice / balance due <strong>'+money(total)+'</strong></span><span>Total received <strong>'+money(received)+'</strong></span><span>Balance <strong>'+money(balance)+'</strong></span>'+
+    /* a new bill takes the client's unused advance automatically after saving */
+    var useAdv=0;
+    if(opts&&opts.advance&&!d.id&&d.clientId&&(!opts.when||opts.when())){if(advC!==d.clientId){advC=d.clientId;try{advA=r2(allocate().advance[d.clientId]||0)}catch(e){advA=0}}useAdv=r2(Math.min(advA,balance))}
+    var bal2=r2(balance-useAdv);
+    box.innerHTML='<span>Invoice / balance due <strong>'+money(total)+'</strong></span><span>Total received <strong>'+money(received)+'</strong></span>'+
+      (advA>0.004&&opts&&opts.advance&&!d.id&&d.clientId?'<span>Client advance <strong>'+money(advA)+'</strong>'+(useAdv>0.004?' · '+money(useAdv)+' will be used for this bill':'')+'</span>':'')+
+      '<span>Balance <strong>'+money(bal2)+'</strong></span>'+
       (advance>0?'<span>Advance <strong>'+money(advance)+'</strong></span>':'')+
-      '<span class="pill '+(balance<=0.004?'paid':(received>0?'partial':'unpaid'))+'">'+(balance<=0.004?'Paid':(received>0?'Partially paid':'Unpaid'))+'</span>';
+      '<span class="pill '+(bal2<=0.004?'paid':(received>0||useAdv>0?'partial':'unpaid'))+'">'+(bal2<=0.004?(useAdv>0.004&&received<=0?'Paid from advance':'Paid'):(useAdv>0.004?'Part paid from advance':(received>0?'Partially paid':'Unpaid')))+'</span>';
   }
   function draw(){
     host.innerHTML='<div class="split-rows">'+rows.map(function(p,i){return '<div class="split-row" data-split-row="'+i+'"><div class="field"><label>Amount (₹)</label><input aria-label="Payment '+(i+1)+' amount" data-sp-amount type="number" min="0.01" step="0.01" placeholder="0.00" value="'+esc(p.amount)+'"></div><div class="field"><label>Payment mode</label><select aria-label="Payment '+(i+1)+' mode" data-sp-mode>'+optList(MODES,p.mode)+'</select></div><div class="field"><label>Reference</label><input aria-label="Payment '+(i+1)+' reference" data-sp-ref placeholder="Optional" value="'+esc(p.reference)+'"></div><button type="button" class="btn sm danger" data-sp-remove aria-label="Remove payment '+(i+1)+'">×</button></div>'}).join('')+'</div><div class="split-actions"><button type="button" class="btn sm" data-sp-add>+ Add Payment</button><button type="button" class="btn sm" data-sp-full>Paid in full</button></div><div class="mem-sum" data-split-summary aria-live="polite"></div>';
@@ -2294,7 +2301,7 @@ SECTIONS['invoice-form']={
     $('#f-newclient').onclick=function(){editClient(null,function(c){draft.clientId=c.id;if(!S.clients.some(function(x){return x.id===c.id}))S.clients.push(c);cc.set(c.id);acctHint()})};
     $('#f-additem').onclick=function(){draft.items.push(blankItem());renderItems();var s=$$('.line .combo-in');if(s.length)s[s.length-3].focus()};
     if(!editing){
-      mountSplit($('#f-split'),draft,function(){var sp=memSplit(draft.items);return sp?(sp.inv.length?sumItems(sp.inv).total:0):sumItems(draft.items).total});
+      mountSplit($('#f-split'),draft,function(){var sp=memSplit(draft.items);return sp?(sp.inv.length?sumItems(sp.inv).total:0):sumItems(draft.items).total},{advance:true});
     }
     $('#f-reset').onclick=function(){var wasEdit=!!draft.id;draft=null;if(wasEdit)go('invoices');else go('invoice-form')};
     $('#inv-form').onsubmit=function(e){e.preventDefault();saveInvoice()};
@@ -3211,7 +3218,7 @@ function phEntryMount(kind){
     phPartyUpdate(d);
   }
   if(d.type==='Sale'&&!editing){
-    mountSplit($('#pe-split'),d,function(){return phTotals(d.type,d.lines,d.roundOn,d.roundManual).total});
+    mountSplit($('#pe-split'),d,function(){return phTotals(d.type,d.lines,d.roundOn,d.roundManual).total},{advance:true,when:function(){return d.type==='Sale'}});
   }
   $('#pe-add').onclick=function(){d.lines.push(phBlankLine());phRenderLines(d);var s=$$('#pe-lines .line');if(s.length){var f=s[s.length-1].querySelector('.combo-in');if(f)f.focus()}};
   $('#pe-reset').onclick=function(){var wasEdit=!!d.id,t=d.type;phDraft[kind]=wasEdit?null:phNewDraft(kind,t);if(wasEdit){phMode[kind]='list'}go(current)};
@@ -4935,6 +4942,7 @@ function aiOpenForm(preset){
   aiDraft=aiNew();
   if(preset){aiDraft.clientId=preset.clientId||'';var c=clientById(aiDraft.clientId);aiDraft.clientName=c?c.name:'';
     if(preset.sesId){var s=findIn('aeSessions',preset.sesId);if(s)aiDraft.lines.push(aiSesLine(s))}
+    (preset.sesIds||[]).forEach(function(id){var s2=findIn('aeSessions',id);if(s2)aiDraft.lines.push(aiSesLine(s2))});
     if(preset.conId){var cn=findIn('aeCons',preset.conId);if(cn)aiDraft.lines.push(aiConLine(cn))}}
   aiMode='form'; closeModal(); if(current!=='ae-invoices') go('ae-invoices'); else go(current);
 }
@@ -4977,7 +4985,7 @@ function aiFormMount(){
   $('#af-ogst').onchange=function(e){d.otherGst=+e.target.value||0;aiRenderTotals()};
   $('#af-add').onclick=function(){d.lines.push({lid:newId('al'),src:'manual',procId:'',name:'',sac:'',qty:1,rate:0,discPct:0,gst:18});aiRenderLines();var x=$$('#af-lines .combo-in');if(x.length)x[x.length-1].focus()};
   if(!editing){
-    mountSplit($('#af-split'),d,function(){return aiTotals(d).total});
+    mountSplit($('#af-split'),d,function(){return aiTotals(d).total},{advance:true});
   }
   $('#af-reset').onclick=function(){var wasEdit=!!d.id;aiDraft=wasEdit?null:aiNew();if(wasEdit)aiMode='list';go(current)};
   $('#ai-form').onsubmit=function(e){e.preventDefault();aiSave()};
@@ -5550,6 +5558,7 @@ SECTIONS['ae-procedures']={
     if(!activeVouchers('aeQuotes').length){b.innerHTML='<div class="empty"><strong>No sessions yet</strong>Sessions come from quotations. Create a quotation to start tracking.</div>';return}
     var rows=ssRows(), all=0; activeVouchers('aeQuotes').forEach(function(q){all+=(q.lines||[]).length});
     if(!rows.length){b.innerHTML='<div class="empty"><strong>No matches</strong>No quotation item matches these filters.</div>';return}
+    var bmT=isDoctor()?null:aiBilledMap(), unbilled=function(st){return bmT?st.sessions.filter(function(x){return !sesBilling(x,bmT).billed}).sort(function(a,c){return (a.date||'').localeCompare(c.date||'')}):[]};
     var pmT=qtPayMap(), advAl=isDoctor()?null:pmT.al, advOf=function(cid){return advAl?r2(advAl.advance[cid]||0):0};
     b.innerHTML='<div class="tbl"><table class="ap-tbl"><thead><tr><th>Client</th><th>Quotation</th><th>Procedure</th><th>Sessions done</th><th class="num">Upcoming</th><th class="num">Left</th>'+(advAl?'<th class="num" title="After discount, incl. GST">Rate per session</th><th class="num" title="Client\u2019s unused advance (all departments)">Advance</th><th class="num" title="Still to receive for this quotation">Pending</th>':'')+'<th>Next appointment</th><th>Consent</th><th></th></tr></thead><tbody>'+
       rows.map(function(r){return '<tr><td><button class="link" style="color:inherit" data-client-view="'+esc(r.q.clientId)+'">'+esc(r.q.clientName)+'</button><div class="sub">'+esc(r.q.clientPhone||'')+'</div></td>'+
@@ -5557,13 +5566,14 @@ SECTIONS['ae-procedures']={
         '<td>'+esc(r.l.name)+(r.st.perUnit?'<div class="sub">'+esc(r2(r.st.unitsUsed)+' of '+r2(r.st.unitsQ)+' '+qlUnit(r.l)+' used')+'</div>':'')+'</td><td class="nowrap">'+(r.st.perUnit?r.st.done+' visit'+(r.st.done===1?'':'s'):progBar(r.st.done,r.total))+(r.st.stopped?'<div class="sub" style="color:#8a4b00">Stopped after '+r.st.done+' of '+(+r.l.sessions||0)+(r.st.stopEv.reason?' · '+esc(r.st.stopEv.reason):'')+'</div>':'')+'</td><td class="num">'+r.upcoming+'</td><td class="num">'+(r.st.perUnit?(r.st.closed?'Completed':'Open'):(r.st.stopped?'Stopped':r.st.left))+'</td>'+(advAl?'<td class="num nowrap">'+(function(){var n=qlQty(r.l);if(!(n>0))return '—';var sum=(r.q.lines||[]).reduce(function(t,x){return t+qtLine(x).total},0),f=sum>0&&(+r.q.total||0)>0?(+r.q.total)/sum:1;return money(r2(qtLine(r.l).total*f/n))+(qlPU(r.l)?'<div class="sub">per '+esc(String(qlUnit(r.l)).replace(/s$/,''))+'</div>':'')})()+'</td><td class="num nowrap">'+(advOf(r.q.clientId)>0.004?'<strong style="color:#1d7a46">'+money(advOf(r.q.clientId))+'</strong>':'—')+'</td><td class="num nowrap">'+(function(){var lk=qtLock(r.q,pmT);if(lk)return '<strong style="color:#b42318">'+money(lk)+'</strong>'+(isAdmin()&&!readOnly?'<div><button class="link" style="font-size:12px" data-ss-allow="'+esc(r.q.id)+'">Allow anyway</button></div>':'');if(r.q.payOverride)return '—<div class="sub">Allowed by Admin'+(isAdmin()&&!readOnly?' · <button class="link" style="font-size:12px" data-ss-allow="'+esc(r.q.id)+'">Undo</button>':'')+'</div>';return '—'})()+'</td>':'')+
         '<td class="nowrap">'+(r.next?fmtDate(r.next.date)+'<div class="sub">'+esc(fmtTime(apFrom(r.next)))+'</div>':'—')+'</td>'+
         '<td class="nowrap">'+(function(){var c=consentFor(r.q.id,r.st.key);if(c)return '<button class="link" data-ss-cview="'+esc(c.id)+'"><span class="pill paid">Taken</span></button>';if(consentNeeded(r.q.id,r.st.key))return '<span class="pill unpaid">Required</span>'+(readOnly?'':' <button class="btn sm" data-ss-cons="'+esc(r.q.id)+'|'+r.i+'">Take</button>');return '—'})()+'</td>'+
-        '<td><div class="row-acts">'+(!readOnly&&!isDoctor()?'<button class="btn sm" data-ss-recv="'+esc(r.q.id)+'" title="Receive payment" aria-label="Receive payment">\u20B9 Receive</button>':'')+(!readOnly&&(r.st.left>0||r.st.perUnit)?(r.st.open>0||r.st.perUnit?'<button class="btn sm w" data-ss-book="'+esc(r.q.id)+'|'+r.i+'">Appointment</button>':'')+'<button class="btn sm w" data-ss-ses="'+esc(r.q.id)+'|'+r.i+'">Session</button>':'')+(!readOnly&&r.st.perUnit?(r.st.closed?'<button class="btn sm" data-ss-ev="reopen|'+esc(r.q.id)+'|'+r.i+'">Reopen</button>':'<button class="btn sm" data-ss-ev="complete|'+esc(r.q.id)+'|'+r.i+'" title="Treatment finished: move out of the open list">Mark completed</button>'):'')+(isMgr()&&!readOnly&&!r.st.perUnit?(r.st.stopped?'<button class="btn sm" data-ss-unstop="'+esc(r.q.id)+'|'+r.i+'">Reopen</button>':(r.st.left>0?'<button class="btn sm" data-ss-stop="'+esc(r.q.id)+'|'+r.i+'" title="Client will not take the remaining sessions">Stop</button>':'')):'')+'<button class="btn sm" data-ss-photos="'+esc(r.q.id)+'|'+r.i+'">Photos</button></div></td></tr>'}).join('')+
+        '<td><div class="row-acts">'+(function(){if(readOnly||isDoctor())return '';var ub=unbilled(r.st);return ub.length?'<button class="btn sm primary" data-ss-bill="'+esc(ub.map(function(x){return x.id}).join(','))+'" title="Bill the sessions done but not invoiced">Bill ('+ub.length+')</button>':''})()+(!readOnly&&!isDoctor()?'<button class="btn sm" data-ss-recv="'+esc(r.q.id)+'" title="Receive payment" aria-label="Receive payment">\u20B9 Receive</button>':'')+(!readOnly&&(r.st.left>0||r.st.perUnit)?(r.st.open>0||r.st.perUnit?'<button class="btn sm w" data-ss-book="'+esc(r.q.id)+'|'+r.i+'">Appointment</button>':'')+'<button class="btn sm w" data-ss-ses="'+esc(r.q.id)+'|'+r.i+'">Session</button>':'')+(!readOnly&&r.st.perUnit?(r.st.closed?'<button class="btn sm" data-ss-ev="reopen|'+esc(r.q.id)+'|'+r.i+'">Reopen</button>':'<button class="btn sm" data-ss-ev="complete|'+esc(r.q.id)+'|'+r.i+'" title="Treatment finished: move out of the open list">Mark completed</button>'):'')+(isMgr()&&!readOnly&&!r.st.perUnit?(r.st.stopped?'<button class="btn sm" data-ss-unstop="'+esc(r.q.id)+'|'+r.i+'">Reopen</button>':(r.st.left>0?'<button class="btn sm" data-ss-stop="'+esc(r.q.id)+'|'+r.i+'" title="Client will not take the remaining sessions">Stop</button>':'')):'')+'<button class="btn sm" data-ss-photos="'+esc(r.q.id)+'|'+r.i+'">Photos</button></div></td></tr>'}).join('')+
       '</tbody></table></div><p class="hint">'+countOf(rows.length,all,'items')+'</p>';
     $$('[data-ss-ses],[data-ss-cons],[data-ss-photos]',b).forEach(function(x){var v=x.dataset.ssSes||x.dataset.ssCons||x.dataset.ssPhotos||'',q=findIn('aeQuotes',v.split('|')[0]),lk=qtLock(q,pmT);if(lk){x.disabled=true;x.title=qtLockMsg(q,lk);x.style.opacity='.45';x.style.cursor='not-allowed'}});
     $$('[data-ss-allow]',b).forEach(function(x){x.onclick=function(){var q=findIn('aeQuotes',x.dataset.ssAllow);if(!q)return;var on=!q.payOverride;
       if(!confirm(on?'Allow consent, sessions and photos for '+q.no+' before full payment?':'Lock '+q.no+' again until full payment?'))return;
       x.disabled=true;put('aeQuotes',Object.assign({},q,{payOverride:on,payOverrideBy:on?((CURRENT_USER&&CURRENT_USER.name)||''):'',payOverrideAt:on?new Date().toISOString():'',updatedAt:new Date().toISOString()})).then(function(){toast(on?q.no+' allowed without full payment.':q.no+' locked until full payment.');go(current)}).catch(function(e){x.disabled=false;toast(errText(e))})}});
     $$('[data-ss-qt]',b).forEach(function(x){x.onclick=function(){viewQt(x.dataset.ssQt)}});
+    $$('[data-ss-bill]',b).forEach(function(x){x.onclick=function(){var ids=x.dataset.ssBill.split(','),s0=findIn('aeSessions',ids[0]);if(s0)aiOpenForm({clientId:s0.clientId,sesIds:ids})}});
     $$('[data-ss-stop]',b).forEach(function(x){x.onclick=function(){var p=x.dataset.ssStop.split('|'),q=findIn('aeQuotes',p[0]);if(q)lineStop(q,+p[1])}});
     $$('[data-ss-unstop]',b).forEach(function(x){x.onclick=function(){var p=x.dataset.ssUnstop.split('|'),q=findIn('aeQuotes',p[0]),l=q&&q.lines[+p[1]];if(!l)return;x.disabled=true;var now=new Date().toISOString();put('aeLineEv',{id:newId('le'),quoteId:q.id,quoteNo:q.no,lineKey:qtLineKey(q,l,+p[1]),action:'unstop',at:now,by:CURRENT_USER?CURRENT_USER.name:'',createdAt:now,updatedAt:now}).then(function(){toast(l.name+' reopened.');go(current)}).catch(function(e){x.disabled=false;toast(errText(e))})}});
     $$('[data-ss-ev]',b).forEach(function(x){x.onclick=function(){var p=x.dataset.ssEv.split('|'),q=findIn('aeQuotes',p[1]),l=q&&q.lines[+p[2]];if(!l)return;x.disabled=true;lineEvent(q,qtLineKey(q,l,+p[2]),p[0])}});
