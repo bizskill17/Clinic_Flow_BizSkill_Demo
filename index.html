@@ -1777,7 +1777,8 @@ window.addEventListener('resize',revealActiveMenu);
 window.addEventListener('scroll',sizeActiveMenu,{passive:true});
 /* opening a page from the menu always shows its list, never a half-filled form */
 function toListMode(k){
-  if(k==='ae-consultations'){conMode='list';conDraft=null}
+  if(k==='ae-appointments'){apF.view='all'}
+  else if(k==='ae-consultations'){conMode='list';conDraft=null}
   else if(k==='ae-sessions'){sesMode='list';sesDraft=null}
   else if(k==='ae-invoices'){aiMode='list';aiDraft=null}
   else if(k==='ae-quotations'){qtMode='list';qtDraft=null}
@@ -3695,7 +3696,7 @@ var AP_STATUS=['Booked','Completed','Cancelled','No-show'];
 /* Confirmed and Arrived are no longer offered; older appointments with them show as Booked */
 function apStatusShown(s){return s==='Confirmed'||s==='Arrived'?'Booked':s}
 var AP_PILL={Booked:'off',Confirmed:'partial',Arrived:'partial',Completed:'paid',Cancelled:'unpaid','No-show':'unpaid'};
-var apF={view:'day',date:'',q:'',type:'',status:'',staff:''};
+var apF={view:'all',date:'',q:'',type:'',status:'',staff:''};
 function addDays(ds0,n){var d=parseD(ds0);d.setDate(d.getDate()+n);return ds(d)}
 function toMin(t){var p=String(t||'0:0').split(':');return (+p[0]||0)*60+(+p[1]||0)}
 function fmtTime(t){if(!t)return '';var m=toMin(t),h=Math.floor(m/60),mm=m%60;return (h%12||12)+':'+String(mm).padStart(2,'0')+' '+(h<12?'AM':'PM')}
