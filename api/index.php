@@ -352,6 +352,46 @@ if($action==='cancel_voucher'){
  }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();respond(409,['error'=>$e->getMessage()]);}
 }
 
+/* ---- restore a cancelled voucher (Admin). Cancelling only marks the record, so restoring clears the mark after safety checks. ---- */
+if($action==='restore_voucher'){
+ if($method!=='POST')respond(405,['error'=>'Method not allowed.']);
+ $actor=me($pdo);if(!admin($actor))respond(403,['error'=>'Only Admin can restore vouchers.']);
+ $voucherCols=['spa_invoices','spa_receipts','ph_receipts','ph_moves','ae_consultations','ae_quotations','ae_sessions','ae_invoices','ae_consents','dept_usage','spa_memberships','spa_redemptions','ph_supplier_payments','spa_mships','exp_expenses','exp_vendor_payments','ae_appointments'];
+ $c=(string)($in['collection']??'');$id=(string)($in['id']??'');$reason=trim((string)($in['reason']??''));
+ if(!in_array($c,$voucherCols,true)||$id===''||$reason===''||strlen($reason)>300)respond(400,['error'=>'Choose a voucher and enter a reason.']);
+ $pdo->beginTransaction();
+ try{
+  $load=static function(string $col)use($pdo):array{$q=$pdo->prepare('SELECT id,data FROM docs WHERE collection=? ORDER BY id FOR UPDATE');$q->execute([$col]);$o=[];foreach($q as $r)$o[$r['id']]=json_decode($r['data'],true)?:[];return $o;};
+  $all=[];foreach($voucherCols as $col)$all[$col]=$load($col);
+  $active=static function(string $col)use(&$all):array{return array_filter($all[$col]??[],static fn($r)=>empty($r['cancelled']));};
+  $doc=$all[$c][$id]??null;if(!$doc||empty($doc['cancelled']))throw new RuntimeException('This voucher is not cancelled.');
+  if(in_array($c,['exp_expenses','exp_vendor_payments'],true)&&!expVisible($actor,$doc))throw new RuntimeException('Voucher is not available to your account.');
+  $no=(string)($doc['no']??'');
+  if($no!=='')foreach($active($c) as $k=>$r)if((string)$k!==$id&&(string)($r['no']??'')===$no)throw new RuntimeException($no.' is now used by another entry. Enter it again as a new entry instead.');
+  /* things it points to must still be active */
+  $parents=['quoteId'=>'ae_quotations','conId'=>'ae_consultations','sesId'=>'ae_sessions','apptId'=>'ae_appointments','memId'=>'spa_memberships','invoiceId'=>'spa_invoices','saleId'=>'ph_moves'];
+  foreach($parents as $f=>$pc){$v=(string)($doc[$f]??'');if($v===''||$pc===$c)continue;if($c==='spa_memberships'&&$f==='invoiceId')continue;if($c==='spa_mships'&&$f==='invoiceId')continue;
+   if(isset($all[$pc][$v])&&!empty($all[$pc][$v]['cancelled']))throw new RuntimeException('It belongs to '.($all[$pc][$v]['no']??'a record').', which is cancelled. Restore that first.');}
+  foreach(array_merge($doc['lines']??[],$doc['items']??[]) as $l){
+   $src=(string)($l['src']??'');$sid=(string)($l['srcId']??'');
+   if($c==='ae_invoices'&&in_array($src,['ses','con'],true)&&$sid!==''){$pc=$src==='ses'?'ae_sessions':'ae_consultations';
+     if(isset($all[$pc][$sid])&&!empty($all[$pc][$sid]['cancelled']))throw new RuntimeException('A '.($src==='ses'?'session':'consultation').' on this bill ('.($all[$pc][$sid]['no']??'').') is cancelled. Restore it first.');
+     foreach($active('ae_invoices') as $k=>$r)foreach(($r['lines']??[]) as $x)if(($x['src']??'')===$src&&(string)($x['srcId']??'')===$sid)throw new RuntimeException(($all[$pc][$sid]['no']??'An item on this bill').' is already billed on '.($r['no']??$k).'. Restoring would bill it twice.');}
+   if($c==='ae_invoices'&&$src==='qt'&&!empty($l['quoteId'])&&isset($all['ae_quotations'][$l['quoteId']])&&!empty($all['ae_quotations'][$l['quoteId']]['cancelled']))throw new RuntimeException('Its quotation is cancelled. Restore that first.');}
+  /* the same visit or appointment must not be in use by another active entry */
+  if(in_array($c,['ae_sessions','ae_consultations'],true)&&!empty($doc['apptId']))foreach($active($c) as $k=>$r)if((string)$k!==$id&&(string)($r['apptId']??'')===(string)$doc['apptId'])throw new RuntimeException('Its appointment is already used by '.($r['no']??$k).'. Restoring would count the visit twice.');
+  if($c==='spa_invoices'&&((!empty($doc['memSaleId'])&&!empty($all['spa_memberships'][$doc['memSaleId']]['cancelled']))||(!empty($doc['clubSaleId'])&&!empty($all['spa_mships'][$doc['clubSaleId']]['cancelled']))))throw new RuntimeException('Restore the package or membership instead; its invoice comes back with it.');
+  $targets=[[$c,$id]];
+  if(in_array($c,['spa_memberships','spa_mships'],true)&&!empty($doc['invoiceId'])){$iid=(string)$doc['invoiceId'];if(!empty($all['spa_invoices'][$iid]['cancelled'])&&($all['spa_invoices'][$iid]['cancelledAt']??'')===($doc['cancelledAt']??''))$targets[]=['spa_invoices',$iid];}
+  $stamp=gmdate('Y-m-d\TH:i:s.000\Z');$records=[];
+  foreach($targets as [$col,$key]){$d=$all[$col][$key];
+   $h=is_array($d['cancelHistory']??null)?$d['cancelHistory']:[];$h[]=['cancelledAt'=>$d['cancelledAt']??'','cancelledBy'=>$d['cancelledBy']??'','cancelReason'=>$d['cancelReason']??'','restoredAt'=>$stamp,'restoredBy'=>$actor['name']??'','restoreReason'=>$reason];
+   unset($d['cancelled'],$d['cancelReason'],$d['cancelledAt'],$d['cancelledBy']);$d['cancelHistory']=$h;$d['restoredAt']=$stamp;$d['restoredBy']=$actor['name']??'';$d['restoreReason']=$reason;$d['updatedAt']=$stamp;
+   save($pdo,$col,$key,$d,true);$d['id']=$key;$records[]=['collection'=>$col,'record'=>$d];}
+  $pdo->commit();respond(200,['ok'=>true,'records'=>$records]);
+ }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();respond(409,['error'=>$e->getMessage()]);}
+}
+
 /* ---- bulk save (imports): up to 1000 records of one collection in one transaction ---- */
 if($action==='bulk'){if($method!=='POST')respond(405,['error'=>'Method not allowed.']);$u=me($pdo);$c=(string)($in['collection']??'');if(!in_array($c,$cols,true))respond(400,['error'=>'Unknown collection.']);if(in_array($c,['spa_users','spa_business'],true))respond(400,['error'=>'This list can’t be bulk saved.']);if(!allowed($u,$c,'POST'))respond(403,['error'=>'Not permitted for your role.']);$recs=$in['records']??null;if(!is_array($recs)||count($recs)>1000)respond(400,['error'=>'Invalid records.']);$pdo->beginTransaction();try{foreach($recs as $r){$id=(string)($r['id']??'');$d=$r['data']??null;if($id===''||strlen($id)>100||!is_array($d))throw new Exception('bad record');save($pdo,$c,$id,$d,false,$u);}$pdo->commit();}catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();error_log($e->getMessage());respond($e instanceof DomainException?403:400,['error'=>$e instanceof DomainException?$e->getMessage():'Import failed: a record was invalid.']);}respond(200,['ok'=>true,'count'=>count($recs)]);}
 $user=me($pdo);$c=$method==='GET'?($_GET['collection']??''):($in['collection']??'');if(!is_string($c)||!in_array($c,$cols,true))respond(400,['error'=>'Unknown collection.']);if(!allowed($user,$c,$method))respond(403,['error'=>'Not permitted for your role.']);

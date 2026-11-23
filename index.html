@@ -1568,8 +1568,15 @@ function showCancellationHistory(){
   rows.sort(function(a,b){return (b.doc.cancelledAt||'').localeCompare(a.doc.cancelledAt||'')});
   // Follow the same expense visibility rules as the normal expense views.
   rows=rows.filter(function(x){return (x.kind!=='expenses'&&x.kind!=='vpays')||isAdmin()||!x.doc.adminOnly});
-  var m=openModal('<h2>Cancellation history</h2><p class="hint">Cancelled vouchers are retained for reference and excluded from active balances and reports.</p><div class="field"><label>Search</label><input id="cancel-search" placeholder="Voucher, client, reason or user"></div><div class="tbl"><table><thead><tr><th>Voucher</th><th>Type</th><th>Party</th><th>Amount</th><th>Cancelled</th><th>By</th><th>Reason</th></tr></thead><tbody>'+rows.map(function(x){var d=x.doc;return '<tr><td>'+esc(d.no||d.id)+'</td><td>'+esc(d.type||x.kind)+'</td><td>'+esc(d.clientName||d.supplierName||d.vendorName||'')+'</td><td>'+money(d.total||d.amount||d.worth||d.value||0)+'</td><td>'+esc(d.cancelledAt?istStamp(d.cancelledAt):'')+'</td><td>'+esc(d.cancelledBy||'')+'</td><td>'+esc(d.cancelReason||'')+'</td></tr>'}).join('')+'</tbody></table></div>'+(!rows.length?'<p class="hint">No cancelled vouchers.</p>':''),'--m3');
+  var m=openModal('<h2>Cancellation history</h2><p class="hint">Cancelled vouchers are retained for reference and excluded from active balances and reports.</p><div class="field"><label>Search</label><input id="cancel-search" placeholder="Voucher, client, reason or user"></div><div class="tbl"><table><thead><tr><th>Voucher</th><th>Type</th><th>Party</th><th>Amount</th><th>Cancelled</th><th>By</th><th>Reason</th><th></th></tr></thead><tbody>'+rows.map(function(x,i){var d=x.doc;return '<tr><td>'+esc(d.no||d.id)+'</td><td>'+esc(d.type||x.kind)+'</td><td>'+esc(d.clientName||d.supplierName||d.vendorName||'')+'</td><td>'+money(d.total||d.amount||d.worth||d.value||0)+'</td><td>'+esc(d.cancelledAt?istStamp(d.cancelledAt):'')+'</td><td>'+esc(d.cancelledBy||'')+'</td><td>'+esc(d.cancelReason||'')+'</td><td>'+(isAdmin()&&!readOnly&&DB?'<button type="button" class="btn sm" data-restore="'+i+'">Restore</button>':'')+'</td></tr>'}).join('')+'</tbody></table></div>'+(!rows.length?'<p class="hint">No cancelled vouchers.</p>':''),'--m3');
   m.querySelector('#cancel-search').oninput=function(){var q=this.value.toLowerCase();m.querySelectorAll('tbody tr').forEach(function(r){r.hidden=r.textContent.toLowerCase().indexOf(q)<0})};
+  m.querySelectorAll('[data-restore]').forEach(function(b){b.onclick=function(){var x=rows[+b.dataset.restore];if(x)restoreVoucher(x.kind,x.doc)}});
+}
+/* bring back a voucher cancelled by mistake (Admin); the server checks it won't double-count anything */
+function restoreVoucher(kind,doc){
+  reasonModal('Restore '+(doc.no||'this entry')+'?','It comes back with its number and details; balances, stock and lists update. The cancellation stays on record.',['Cancelled by mistake','Wrong entry cancelled'],'Restore',function(v){
+    return authCall('restore_voucher',{collection:COL[kind],id:doc.id,reason:v}).then(function(r){(r.records||[]).forEach(function(x){var k=Object.keys(COL).find(function(k){return COL[k]===x.collection}),list=k&&S[k];if(!list)return;var i=list.findIndex(function(y){return y.id===x.record.id});if(i>=0)list[i]=x.record;else list.push(x.record)});toast((doc.no||'Entry')+' restored.');setTimeout(function(){go(current)},0)}).catch(function(e){var x=new Error(e&&e.message||'Could not restore.');x.show=true;throw x});
+  });
 }
 document.addEventListener('click',function(e){if(e.target.closest('[data-cancellation-history]'))showCancellationHistory()});
 /* Hide and block record-edit actions for every non-Admin role, including Manager. */
@@ -5404,7 +5411,7 @@ function reasonModal(title,hint,opts,okLabel,onOk){
   sel.onchange=function(){ow.hidden=sel.value!=='Other';if(!ow.hidden)tx.focus()};
   m.querySelector('[data-x]').onclick=closeModal;
   m.querySelector('form').onsubmit=function(e){e.preventDefault();var v=sel.value==='Other'?tx.value.replace(/\s+/g,' ').trim():sel.value;if(!v){er.textContent='Write the reason.';er.hidden=false;return}
-    var b=m.querySelector('[type=submit]');b.disabled=true;Promise.resolve(onOk(v)).then(function(){closeModal()}).catch(function(x){b.disabled=false;er.textContent=errText(x);er.hidden=false})};
+    var b=m.querySelector('[type=submit]');b.disabled=true;Promise.resolve(onOk(v)).then(function(){closeModal()}).catch(function(x){b.disabled=false;er.textContent=x&&x.show?x.message:errText(x);er.hidden=false})};
 }
 /* Refund: money paid back to a client out of their unused advance (Admin / Manager) */
 function openRefund(clientId){
