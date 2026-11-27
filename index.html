@@ -5033,7 +5033,7 @@ function aiRenderLines(){
   if(!d.lines.length){box.innerHTML='<p class="hint" style="margin:0">'+(d.clientId?'Add items from the list above, or add another procedure.':'Choose the client to see what is waiting to be billed.')+'</p>';aiRenderTotals();return}
   box.innerHTML=d.lines.map(function(l,i){var c=aiCalc(l), fixed=l.src==='con'||l.src==='ses';
     return '<div class="line" data-i="'+i+'"><div class="line-top" style="grid-template-columns:26px minmax(0,1fr) 32px"><span class="line-n" aria-hidden="true">'+(i+1)+'</span>'+
-      (l.src==='manual'?'<div class="field"><label for="al-proc-'+i+'">Procedure</label><div class="h-proc"></div></div>':'<div class="field"><label>Item</label><div class="ro-field"><strong>'+esc(l.name)+'</strong>'+(l.ref?' <span class="sub">'+esc(l.ref)+'</span>':'')+'</div></div>')+
+      (l.src==='manual'?'<div class="field"><label for="al-proc-'+i+'">Procedure</label><div class="h-proc"></div></div>':'<div class="field"><label>Item</label><div class="ro-field" style="display:block;height:auto;white-space:normal;overflow-wrap:anywhere"><strong style="display:block">'+esc(l.name)+'</strong>'+(l.ref?'<span class="sub" style="display:block;margin-top:4px">'+esc(l.ref)+'</span>':'')+'</div></div>')+
       '<button type="button" class="icon-btn al-del" aria-label="Remove item '+(i+1)+'">×</button></div>'+
       '<div class="line-nums n8">'+
       '<div class="field"><label for="al-qty-'+i+'">'+(l.perUnit?esc((l.unitName||'units').replace(/^./,function(c){return c.toUpperCase()})):l.src==='qt'?'Sessions':'Qty')+'</label>'+(fixed?'<div class="ro-box">'+(l.perUnit?esc(l.qty):'1')+'</div>':'<input id="al-qty-'+i+'" class="al-qty num" type="number" min="1" step="1" value="'+esc(l.qty)+'">')+'</div>'+
