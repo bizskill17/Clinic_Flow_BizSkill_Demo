@@ -12,6 +12,28 @@ jobs:
       - name: Get the code
         uses: actions/checkout@v4
 
+      - name: Generate private database configuration
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          SETUP_KEY: ${{ secrets.SETUP_KEY }}
+        run: |
+          python3 - <<'PY'
+          import os, json, base64
+          from pathlib import Path
+          password = os.environ.get("DB_PASSWORD", "")
+          if not password:
+              raise SystemExit("Add the DB_PASSWORD repository secret, then run this workflow again.")
+          config = {
+              "host": "localhost",
+              "name": "u380752258_clinicdemo",
+              "user": "u380752258_clinicdemo",
+              "pass": password,
+              "setup_key": os.environ.get("SETUP_KEY", ""),
+          }
+          payload = base64.b64encode(json.dumps(config).encode()).decode()
+          Path("api/config.php").write_text("<?php\nreturn json_decode(base64_decode('" + payload + "'), true);\n")
+          PY
+
       - name: Upload to Hostinger by FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
@@ -24,5 +46,4 @@ jobs:
             **/.git*/**
             **/.github/**
             **/data/**
-            api/config.php
             README.md
