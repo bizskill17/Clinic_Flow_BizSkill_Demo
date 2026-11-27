@@ -3081,11 +3081,11 @@ SECTIONS['ph-items']=simpleMaster({
   usage:function(r){var n=activeVouchers('phMoves').filter(function(m){return (m.lines||[]).some(function(l){return l.itemId===r.id})}).length+activeVouchers('aeCons').filter(function(c){return (c.meds||[]).some(function(x){return x.itemId===r.id})}).length;return n?r.name+' appears in '+n+' stock entr'+(n===1?'y':'ies')+', so it can’t be deleted. Set the status to Inactive instead.':''}
 });
 SECTIONS['ph-suppliers']=simpleMaster({
-  kind:'phSuppliers',prefix:'ps',title:'Suppliers',singular:'supplier',singularCap:'Supplier',color:'--m13',searchPh:'Name, contact, phone or GSTIN',wide:true,
+  kind:'phSuppliers',prefix:'ps',title:'Suppliers',singular:'supplier',singularCap:'Supplier',color:'--m13',searchPh:'Name, contact person, phone or GSTIN',wide:true,
   emptyText:'Add the distributors and companies you buy from.',
   fields:[
     {id:'name',label:'Supplier name',req:true,max:100,span2:true},
-    {id:'contact',label:'Contact person',max:80},
+    {id:'contact',label:'Contact Person',max:80},
     {id:'phone',label:'Phone',max:20},
     {id:'email',label:'Email',max:80},
     {id:'gstin',label:'GSTIN',max:15,upper:true},
@@ -3094,7 +3094,7 @@ SECTIONS['ph-suppliers']=simpleMaster({
     {id:'state',label:'State',type:'static',from:'cityId',compute:function(v){return cityLabel(v).state}},
     {id:'openingBal',label:'Opening balance (₹)',type:'number',allowNeg:true,placeholderText:'0.00'},
     {id:'status',label:'Status',type:'select',noBlank:true,def:'Active',options:function(){return ['Active','Inactive']}}],
-  cols:[{h:'Supplier',text:function(r){return r.name}},{h:'Contact',text:function(r){return r.contact||''}},{h:'Phone',text:function(r){return r.phone||''}},
+  cols:[{h:'Supplier',text:function(r){return r.name}},{h:'Contact Person',text:function(r){return r.contact||''}},{h:'Phone',text:function(r){return r.phone||''}},
     {h:'City',text:function(r){return cityLabel(r.cityId).city}},{h:'State',text:function(r){return cityLabel(r.cityId).state}},{h:'GSTIN',text:function(r){return r.gstin||''}},{h:'Opening balance',num:true,text:function(r){var v=+r.openingBal||0;return v>0?money(v):(v<0?'-'+money(-v):'')}},{h:'Status',text:function(r){return r.status||'Active'}}],
   search:function(r){return r.name+' '+(r.contact||'')+' '+(r.phone||'')+' '+(r.gstin||'')},sort:function(a,b){return byText(a.name,b.name)},
   validate:function(o,id){
